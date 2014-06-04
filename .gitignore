@@ -1,0 +1,9 @@
+/*
+target/
+
+!/.gitignore
+!/build.sbt
+!/src
+!/project
+/project/boot/
+/project/plugins/project/
