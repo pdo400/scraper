@@ -27,6 +27,19 @@ object ScraperSpec {
   val sampleHtml = new Scanner(getClass.getResourceAsStream(sampleResource), "UTF-8").useDelimiter("""\A""").next()
   val sampleExtraction: Extraction = Map(Name -> "Doug Camplejohn")
   val remoteUrl = new URL("https://twitter.com/camplejohn")
+
+  val testExtractions: KnownExtractions = Map(
+    (new URL("https://twitter.com/ubuntucloud"), Map(Name -> "Ubuntu Cloud")),
+    (new URL("https://twitter.com/eucalyptus"), Map(Name -> "Eucalyptus")),
+    (new URL("https://twitter.com/typesafe"), Map(Name -> "Typesafe")),
+    (new URL("https://twitter.com/linuxfoundation"), Map(Name -> "The Linux Foundation")),
+    (new URL("https://twitter.com/googlemaps"), Map(Name -> "Google Maps")),
+    (new URL("https://twitter.com/TEDTalks"), Map(Name -> "TED Talks")),
+    (new URL("https://twitter.com/RedSox"), Map(Name -> "Boston Red Sox")),
+    (new URL("https://twitter.com/katyperry"), Map(Name -> "KATY PERRY")),
+    (new URL("https://twitter.com/jtimberlake"), Map(Name -> "Justin Timberlake")),
+    (new URL("https://twitter.com/justinbieber"), Map(Name -> "Justin Bieber"))
+  )
 }
 
 class ScraperSpec(parserPool: Parser.Pool) extends FlatSpec with Matchers {
@@ -99,10 +112,10 @@ class ScraperSpec(parserPool: Parser.Pool) extends FlatSpec with Matchers {
       Extractor.evaluate(weightedRules, sampleRoot).extraction.unweighted should be (sampleExtraction)
     }
 
-    "RuleManager" should "correctly extract each known remote document" in {
+    "RuleManager" should "correctly extract each remote test document" in {
       val rm = RuleManager()
 
-      for ((url, ex) <- RuleManager.known)
+      for ((url, ex) <- testExtractions)
         rm.extractAndEvolve(url).unweighted should be (ex)
     }
   }
