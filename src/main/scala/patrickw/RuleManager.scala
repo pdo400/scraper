@@ -38,6 +38,10 @@ class RuleManager(knownExtractions: KnownExtractions, parserPool: Parser.Pool) {
 
   private val keys = (knownExtractions . view flatMap { case (url, exs) => exs . keys }) . toSet
 
+  def rules = currentRules
+
+  def history = snapshots
+
   def extractAndEvolve(url: URL): WeightedExtraction = {
     val doc = Parser.parse(url, parserPool)
     val root = top(doc)
