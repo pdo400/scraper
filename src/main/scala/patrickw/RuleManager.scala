@@ -15,9 +15,10 @@ import patrickw.Key._
 
 object RuleManager extends scalaz.Options {
   final val MinAcceptanceWeight: Weight = RuleWeighter.KnownStartWeight * Math.pow(RuleWeighter.KnownSuccess, 5)
+
   final val MinWildMergeWeight: Weight = RuleWeighter.KnownStartWeight
 
-  final val SnapshotPeriod: Long = 10 * (1000 * 60)
+  final val MinSnapshotPeriod: Long = 10 * (1000 * 60)
   final val SnapshotStaleTime: Long = 24 * (1000 * 60 * 60)
 
   def apply(knownExtractions: KnownExtractions, parserPool: Parser.Pool) =
@@ -32,8 +33,9 @@ class RuleManager(knownExtractions: KnownExtractions, parserPool: Parser.Pool) {
   //
   private val ruleLock = new AnyRef()
   private var currentRules = buildKnown()
-  private var snapshots = List.empty[(WeightedMap, Long)]
-  private var nextSnapshot = Platform.currentTime + SnapshotPeriod
+  private var snapshots = List.empty[(WeightedMap, Long, Long)]
+  private var lastSnapshotTime = Platform.currentTime
+  private var nextSnapshotId = 0L
   private var wildRules = future { Set.empty : UnweightedSet }
 
   private val keys = (knownExtractions . view flatMap { case (url, exs) => exs . keys }) . toSet
@@ -42,23 +44,39 @@ class RuleManager(knownExtractions: KnownExtractions, parserPool: Parser.Pool) {
 
   def history = snapshots
 
-  def extractAndEvolve(url: URL): WeightedExtraction = {
+  def extractAndEvolve(url: URL)(implicit ord: Ordering[OrderableExtractionReport]): WeightedExtraction = {
     val doc = Parser.parse(url, parserPool)
     val root = top(doc)
 
     blocking {
       ruleLock.synchronized {
-        if (Platform.currentTime > nextSnapshot) {
-          updateSnapshots()
-          mergeKnown()
-        }
-
         val er = Extractor.evaluate(currentRules, root)
 
         if (acceptAndEvolveCurrent(er, doc))
           er.extraction
         else
-          bestFromSnapshots(root, er)
+          bestFromSnapshots(root)(ord) match {
+            case Some((oer, id)) if isAcceptable(oer.value) =>
+              touchSnapshot(id)
+              oer.value.extraction
+            case bs : Option[(OrderableExtractionReport, Long)] =>
+              if (Platform.currentTime > lastSnapshotTime + MinSnapshotPeriod) {
+                updateSnapshots()
+                mergeKnown()
+
+                val er2 = Extractor.evaluate(currentRules, root)
+
+                if (acceptAndEvolveCurrent(er2, doc))
+                  er2.extraction
+                else {
+                  val best = bs.foldLeft(List(er.toOrderable, er2.toOrderable)) { (acc, n) => n._1 :: acc} max ord
+                  best.value.extraction
+                }
+              } else {
+                val best = bs.foldLeft(List(er.toOrderable)) { (acc, n) => n._1 :: acc} max ord
+                best.value.extraction
+              }
+          }
       }
     }
   }
@@ -68,8 +86,8 @@ class RuleManager(knownExtractions: KnownExtractions, parserPool: Parser.Pool) {
       (knownExtractions . view map { case (url, exs) =>
         RuleGenerator.generateRules(Parser.parse(url, parserPool), exs) }).toSeq : _*)
 
-  private def isAcceptable(er: ExtractionReport) =
-    keys forall { k => er.extraction get k exists { _._2 >= MinAcceptanceWeight } }
+  private def isAcceptable(er: ExtractionReport, w: Weight = MinAcceptanceWeight) =
+    keys forall { k => er.extraction get k exists { _._2 >= w } }
 
   private def acceptAndEvolveCurrent(er: ExtractionReport, doc: Doc) =
     isAcceptable(er) && {
@@ -78,28 +96,28 @@ class RuleManager(knownExtractions: KnownExtractions, parserPool: Parser.Pool) {
       true
     }
 
-  private def bestFromSnapshots(root: XmlPath, current: ExtractionReport)(implicit ord: Ordering[OrderableExtractionReport]) = {
-    val best = snapshots . view . zipWithIndex . foldLeft ((current.toOrderable, Option.empty[Int])) {
-      (acc, next) =>
-        val ((wm, _), i) = next
-        val oex = Extractor.evaluate(wm, root).toOrderable
-        if (ord.compare(acc._1, oex) >= 0) acc else (oex, Some(i))
-    }
+  private def bestFromSnapshots(root: XmlPath)(implicit ord: Ordering[OrderableExtractionReport]) =
+    if (snapshots.isEmpty)
+      None
+    else
+      Some ( snapshots . view .
+        map { case (wm, id, _) => (Extractor.evaluate(wm, root).toOrderable, id) } .
+        reduceLeft { (acc, next) => if (ord.compare(acc._1, next._1) >= 0) acc else next } )
 
-    for (usedIndex <- best . _2)
-      snapshots = snapshots . view . zipWithIndex . map {
-        case (snap, i) => if (i == usedIndex) (snap._1, Platform.currentTime) else snap
-      } . toList
 
-    best . _1 . value . extraction
-  }
+  def touchSnapshot(id: Long) =
+    snapshots = snapshots . view . map {
+      case (snap, `id`, _) => (snap, id, Platform.currentTime)
+      case other => other
+    } . toList
 
   private def updateSnapshots(): Unit = {
     val now = Platform.currentTime
     val stale = now - SnapshotStaleTime
-    snapshots = snapshots filter { case (wm, ts) => ts > stale }
-    snapshots = (currentRules, now) :: snapshots
-    nextSnapshot = now + SnapshotPeriod
+    snapshots = snapshots filter { case (_, _, ts) => ts > stale }
+    snapshots = (currentRules, nextSnapshotId, now) :: snapshots
+    nextSnapshotId = nextSnapshotId + 1
+    lastSnapshotTime = now
   }
 
   private def mergeKnown(): Unit = {
