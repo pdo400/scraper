@@ -7,10 +7,10 @@ object RuleWeighter {
   final val KnownStartWeight: Weight = 1
   final val WildStartWeight: Weight = 0.1
   final val MaxWeight: Weight = 100
-  final val KnownSuccess: Weight = Math.pow(MaxWeight, 1d / 10)
-  final val WildSuccess: Weight = Math.pow(MaxWeight, 1d / 100)
+  final val KnownSuccess: Weight = Math.pow(MaxWeight / KnownStartWeight, 1d / 10)
+  final val WildSuccess: Weight = Math.pow(MaxWeight / WildStartWeight, 1d / 100)
   final val WildFailure: Weight = 1 / WildSuccess
-  final val StaleWeight: Weight = KnownStartWeight * Math.pow(WildFailure, 10)
+  final val StaleWeight: Weight = WildStartWeight * Math.pow(WildFailure, 10)
 
   final val empty: WeightedMap = Map.empty
 
