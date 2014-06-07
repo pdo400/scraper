@@ -28,20 +28,8 @@ object ScraperSpec {
   val sampleExtraction: Extraction = Map(Name -> "Doug Camplejohn")
   val remoteUrl = new URL("https://twitter.com/camplejohn")
 
-  val knownExtractions: KnownExtractions = KnownInputs.twitterProfiles
-
-  val testExtractions: KnownExtractions = Map(
-    (new URL("https://twitter.com/runarorama"), Map(Name -> "Rúnar Óli")),
-    (new URL("https://twitter.com/ubuntucloud"), Map(Name -> "Ubuntu Cloud")),
-    (new URL("https://twitter.com/eucalyptus"), Map(Name -> "Eucalyptus")),
-    (new URL("https://twitter.com/typesafe"), Map(Name -> "Typesafe")),
-    (new URL("https://twitter.com/googlemaps"), Map(Name -> "Google Maps")),
-    (new URL("https://twitter.com/TEDTalks"), Map(Name -> "TED Talks")),
-    (new URL("https://twitter.com/RedSox"), Map(Name -> "Boston Red Sox")),
-    (new URL("https://twitter.com/katyperry"), Map(Name -> "KATY PERRY")),
-    (new URL("https://twitter.com/jtimberlake"), Map(Name -> "Justin Timberlake")),
-    (new URL("https://twitter.com/justinbieber"), Map(Name -> "Justin Bieber"))
-  )
+  val useAsKnownCount = 5
+  val (knownExtractions, testExtractions) = KnownInputs.twitterProfiles splitAt useAsKnownCount
 }
 
 class ScraperSpec(parserPool: Parser.Pool) extends FlatSpec with Matchers {
@@ -119,6 +107,25 @@ class ScraperSpec(parserPool: Parser.Pool) extends FlatSpec with Matchers {
 
       for ((url, ex) <- testExtractions)
         rm.extractAndEvolve(url).unweighted should be (ex)
+    }
+
+    it should "increase in confidence on a successful extraction" in {
+      val rm = RuleManager(knownExtractions, parserPool)
+
+      val (url, _) = testExtractions.head
+      val first = rm.extractAndEvolve(url)
+      val second = rm.extractAndEvolve(url)
+
+      for ((key, (found1, weight1)) <- first) {
+        val (found2, weight2) = second(key)
+
+        found1 should be (found2)
+
+        if (weight1 == RuleWeighter.MaxWeight)
+          weight1 should be (weight2)
+        else
+          weight1 should be < weight2
+      }
     }
   }
 }
