@@ -26,7 +26,7 @@ object RuleWeighter {
       (acc, krToRrw) =>
         val (kr, (rr, w)) = krToRrw
         rr match {
-          case Right(s) if er.extraction.get(kr.key) == Some(s) =>
+          case Right(found) if er.extraction.get(kr.key).exists { case (used, _) => used == found } =>
             acc + (kr -> Math.min(WildSuccess * w, MaxWeight))
           case _ =>
             val nw = WildFailure * w
