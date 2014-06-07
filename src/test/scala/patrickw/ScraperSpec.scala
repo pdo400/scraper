@@ -118,13 +118,8 @@ class ScraperSpec(parserPool: Parser.Pool) extends FlatSpec with Matchers {
 
       for ((key, (found1, weight1)) <- first) {
         val (found2, weight2) = second(key)
-
         found1 should be (found2)
-
-        if (weight1 == RuleWeighter.MaxWeight)
-          weight1 should be (weight2)
-        else
-          weight1 should be < weight2
+        weight1 should be < weight2
       }
     }
   }
